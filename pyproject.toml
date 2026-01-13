@@ -1,6 +1,6 @@
 [project]
 name = "autograv"
-version = "0.1.0"
+version = "0.1.1"
 description = "Automatic differentiation for numerical relativity using JAX"
 readme = "README.md"
 authors = [
