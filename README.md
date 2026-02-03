@@ -149,6 +149,21 @@ def christoffel_symbols(coordinates, metric):
 - Integration with differential equation solvers
 - Visualization tools for curvature
 
+## Citation
+
+```bibtex
+@software{autograv,
+  author = {Kataru, Baalateja},
+  title = {autograv: Numerical Relativity with Automatic Differentiation},
+  year = {2026},
+  publisher = {GitHub},
+  url = {https://github.com/planckeon/autograv},
+  note = {JAX-based numerical relativity framework}
+}
+```
+
+See also: [Medium Article](https://medium.com/physics-scribbles/bridging-numerical-relativity-and-automatic-differentiation-using-jax-38a2c9e2d949)
+
 ## License
 
 MIT
