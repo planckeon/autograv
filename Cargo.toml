@@ -19,7 +19,7 @@ include = [
 
 [lib]
 name = "autograv"
-path = "src/autograv/lib.rs"
+path = "src/lib.rs"
 
 [dependencies]
 diffable = { version = "0.5.0", default-features = false, features = ["std"] }
