@@ -1,0 +1,26 @@
+[package]
+name = "autograv"
+version = "0.1.0"
+edition = "2024"
+description = "Tensor calculus engine for numerical relativity (Christoffel, Riemann, Einstein, ...) built on diffable's typed automatic differentiation"
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/planckeon/autograv"
+keywords = ["general-relativity", "numerical-relativity", "automatic-differentiation", "tensor-calculus", "physics", "differential-geometry"]
+categories = ["science", "mathematics"]
+include = [
+    "Cargo.toml",
+    "LICENSE",
+    "/README.md",
+    "src/**/*.rs",
+    "tests/**/*.rs",
+    "examples/**/*.rs",
+]
+
+[lib]
+name = "autograv"
+path = "src/autograv/lib.rs"
+
+[dependencies]
+diffable = { version = "0.5.0", default-features = false, features = ["std"] }
+num-traits = "0.2"
