@@ -1,4 +1,12 @@
-# autograv
+<p align="center">
+  <img
+    src="https://raw.githubusercontent.com/planckeon/autograv/main/assets/banner.png"
+    alt="autograv"
+    width="100%"
+  />
+</p>
+
+<h1 align="center">autograv</h1>
 
 **Bridging numerical relativity and automatic differentiation using JAX**
 

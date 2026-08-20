@@ -1,4 +1,24 @@
-# autograv
+<p align="center">
+  <img
+    src="https://raw.githubusercontent.com/planckeon/autograv/main/assets/banner.png"
+    alt="autograv"
+    width="100%"
+  />
+</p>
+
+<h1 align="center">autograv</h1>
+
+<p align="center">
+  <a href="https://crates.io/crates/autograv">
+    <img src="https://img.shields.io/crates/v/autograv.svg" alt="crates.io" />
+  </a>
+  <a href="https://docs.rs/autograv">
+    <img src="https://img.shields.io/docsrs/autograv" alt="docs.rs" />
+  </a>
+  <a href="https://github.com/planckeon/autograv/blob/main/LICENSE">
+    <img src="https://img.shields.io/crates/l/autograv.svg" alt="license" />
+  </a>
+</p>
 
 Numerical relativity through automatic differentiation, with Python and Rust implementations.
 
