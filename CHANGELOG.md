@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Separated Python/JAX and Rust/diffable documentation and package metadata.
+- Added package-specific README files for PyPI and crates.io.
+- Added Rust crate metadata and docs.rs configuration.
+
+## [Rust 0.1.0]
+
+### Added
+
+- Initial crates.io release of the Rust numerical-relativity library.
+- Typed metric-field abstraction built on `diffable`.
+- Christoffel, torsion, Riemann, Ricci, Einstein, stress-energy, and
+  Kretschmann calculations.
+- Minkowski, spherical-coordinate Euclidean, and Schwarzschild metrics.
+- Rust examples and integration tests.
+
 ## [0.1.0] - 2026-01-13
 
 ### Added
@@ -47,5 +64,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Compatible with Python 3.12 on Windows
 - Type-safe with comprehensive type annotations
 
-[Unreleased]: https://github.com/bkataru/autograv/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/bkataru/autograv/releases/tag/v0.1.0
+[Unreleased]: https://github.com/planckeon/autograv/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/planckeon/autograv/releases/tag/v0.1.0

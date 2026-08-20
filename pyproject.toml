@@ -2,7 +2,7 @@
 name = "autograv"
 version = "0.1.1"
 description = "Automatic differentiation for numerical relativity using JAX"
-readme = "README.md"
+readme = "README.python.md"
 authors = [
     { name = "Baalateja Kataru", email = "baalateja.k@gmail.com" }
 ]
@@ -11,7 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 keywords = [
     "general-relativity",
-    "numerical-relativity", 
+    "numerical-relativity",
     "automatic-differentiation",
     "jax",
     "tensor-calculus",
@@ -48,11 +48,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bkataru/autograv"
-Repository = "https://github.com/bkataru/autograv"
-Documentation = "https://github.com/bkataru/autograv#readme"
-Issues = "https://github.com/bkataru/autograv/issues"
-Changelog = "https://github.com/bkataru/autograv/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/planckeon/autograv"
+Repository = "https://github.com/planckeon/autograv"
+Documentation = "https://github.com/planckeon/autograv/blob/main/README.python.md"
+Issues = "https://github.com/planckeon/autograv/issues"
+Changelog = "https://github.com/planckeon/autograv/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["uv_build>=0.9.17,<0.10.0"]

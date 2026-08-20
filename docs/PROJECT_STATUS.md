@@ -138,7 +138,7 @@ uv publish
 git init
 git add .
 git commit -m "Initial commit: autograv v0.1.0"
-git remote add origin https://github.com/bkataru/autograv.git
+git remote add origin https://github.com/planckeon/autograv.git
 git branch -M main
 git push -u origin main
 
@@ -151,7 +151,7 @@ git push -u origin main
 # 3. Create a GitHub Release
 git tag v0.1.0
 git push origin v0.1.0
-# Then create release at: https://github.com/bkataru/autograv/releases/new
+# Then create release at: https://github.com/planckeon/autograv/releases/new
 
 # 4. GitHub Action runs automatically and publishes to PyPI!
 ```

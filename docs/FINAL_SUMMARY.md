@@ -158,7 +158,7 @@ pixi add autograv  # (future)
 
 **Status**: Git initialized, not yet pushed to GitHub
 
-**Planned URL**: https://github.com/bkataru/autograv
+**Planned URL**: https://github.com/planckeon/autograv
 
 ---
 
@@ -324,7 +324,7 @@ If you use AutoGrav in your research, please cite:
   author = {Kataru, Baalateja},
   title = {AutoGrav: Automatic Differentiation for Numerical Relativity},
   year = {2026},
-  url = {https://github.com/bkataru/autograv},
+  url = {https://github.com/planckeon/autograv},
   version = {0.1.0}
 }
 ```
@@ -335,10 +335,10 @@ If you use AutoGrav in your research, please cite:
 
 ### Official Links
 - **PyPI**: https://pypi.org/project/autograv/
-- **GitHub**: https://github.com/bkataru/autograv (planned)
-- **Documentation**: https://github.com/bkataru/autograv#readme
-- **Issues**: https://github.com/bkataru/autograv/issues
-- **Changelog**: https://github.com/bkataru/autograv/blob/main/CHANGELOG.md
+- **GitHub**: https://github.com/planckeon/autograv
+- **Documentation**: https://github.com/planckeon/autograv#readme
+- **Issues**: https://github.com/planckeon/autograv/issues
+- **Changelog**: https://github.com/planckeon/autograv/blob/main/CHANGELOG.md
 
 ### Inspiration
 - **Original blog post**: https://dev.to/bkataru/bridging-numerical-relativity-and-automatic-differentiation-using-jax-2hc3

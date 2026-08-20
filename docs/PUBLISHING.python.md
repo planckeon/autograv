@@ -1,4 +1,4 @@
-# Publishing Guide for autograv
+# Python/PyPI Publishing Guide for autograv
 
 This guide provides step-by-step instructions for publishing autograv to PyPI.
 
@@ -157,7 +157,7 @@ git add .
 git commit -m "Initial commit: autograv v0.1.0"
 
 # Create repo on GitHub and push
-git remote add origin https://github.com/bkataru/autograv.git
+git remote add origin https://github.com/planckeon/autograv.git
 git branch -M main
 git push -u origin main
 ```
@@ -241,7 +241,7 @@ git tag v0.1.0
 git push origin v0.1.0
 
 # Then create a GitHub Release through the web interface:
-# 1. Go to https://github.com/bkataru/autograv/releases/new
+# 1. Go to https://github.com/planckeon/autograv/releases/new
 # 2. Choose tag: v0.1.0
 # 3. Title: "Release 0.1.0"
 # 4. Description: Copy from CHANGELOG.md

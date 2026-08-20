@@ -25,16 +25,16 @@
   #text(size: 18pt, weight: "bold")[
     AutoGrav: Bridging Numerical Relativity and Automatic Differentiation using JAX
   ]
-  
+
   #v(1em)
-  
+
   #text(size: 12pt)[
     Baalateja Kataru \
     #link("mailto:baalateja.k@gmail.com")
   ]
-  
+
   #v(1em)
-  
+
   #text(size: 10pt)[
     January 14, 2026
   ]
@@ -178,7 +178,7 @@ TOLERANCE = 1e-8
 def close_to_zero(func):
     def wrapper(*args, **kwargs):
         result = func(*args, **kwargs)
-        return jnp.where(jnp.abs(result) < TOLERANCE, 
+        return jnp.where(jnp.abs(result) < TOLERANCE,
                          0.0, result)
     return wrapper
 ```
@@ -193,11 +193,11 @@ def christoffel_symbols(coordinates, metric):
     g = metric(coordinates)
     g_inv = jnp.linalg.inv(g)
     jacobian = jax.jacfwd(metric)(coordinates)
-    
-    return 0.5 * jnp.einsum('jm, klm -> jkl', 
+
+    return 0.5 * jnp.einsum('jm, klm -> jkl',
                             g_inv,
-                            jnp.einsum('klm -> mkl', jacobian) + 
-                            jnp.einsum('klm -> lmk', jacobian) - 
+                            jnp.einsum('klm -> mkl', jacobian) +
+                            jnp.einsum('klm -> lmk', jacobian) -
                             jacobian)
 ```
 
@@ -211,17 +211,17 @@ Riemann tensor computation requires derivatives of Christoffel symbols:
 @close_to_zero
 def riemann_tensor(coordinates, metric):
     christoffels = christoffel_symbols(coordinates, metric)
-    
+
     def gamma(coords):
         return christoffel_symbols(coords, metric)
-    
+
     gamma_deriv = jax.jacfwd(gamma)(coordinates)
-    
-    return (gamma_deriv - 
+
+    return (gamma_deriv -
             jnp.einsum('ijkl -> ijlk', gamma_deriv) +
-            jnp.einsum('imk, mjl -> ijkl', 
+            jnp.einsum('imk, mjl -> ijkl',
                        christoffels, christoffels) -
-            jnp.einsum('iml, mjk -> ijkl', 
+            jnp.einsum('iml, mjk -> ijkl',
                        christoffels, christoffels))
 ```
 
@@ -448,9 +448,9 @@ K = kretschmann_invariant(coords, metric)
 
 Complete source code, documentation, and examples available at:
 
-- GitHub: https://github.com/bkataru/autograv
+- GitHub: https://github.com/planckeon/autograv
 - PyPI: https://pypi.org/project/autograv/
-- Documentation: https://github.com/bkataru/autograv#readme
+- Documentation: https://github.com/planckeon/autograv#readme
 
 == License
 

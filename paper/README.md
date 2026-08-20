@@ -57,7 +57,7 @@ If you use AutoGrav in your research, please cite:
   author = {Kataru, Baalateja},
   title = {AutoGrav: Automatic Differentiation for Numerical Relativity},
   year = {2026},
-  url = {https://github.com/bkataru/autograv},
+  url = {https://github.com/planckeon/autograv},
   version = {0.1.0}
 }
 ```
@@ -79,5 +79,5 @@ The paper includes 16 references covering:
 
 For questions about the paper or library:
 - Email: baalateja.k@gmail.com
-- GitHub: https://github.com/bkataru/autograv
+- GitHub: https://github.com/planckeon/autograv
 - PyPI: https://pypi.org/project/autograv/

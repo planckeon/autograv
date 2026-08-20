@@ -2,14 +2,14 @@
 //! the analytical values amenable, K = 12·rs²/r⁶, Ricci/Einstein/SEM = 0.
 
 use autograv::{
-    Schwarzchild, as_t3, christoffel_symbols, einstein_tensor, kretschmann_invariant, ricci_scalar,
-    ricci_tensor, stress_energy_momentum_tensor, torsion_tensor,
+    Schwarzschild, as_t3, christoffel_symbols, einstein_tensor, kretschmann_invariant,
+    ricci_scalar, ricci_tensor, stress_energy_momentum_tensor, torsion_tensor,
 };
 use diffable::coords::Coords;
 use diffable::traits::Tensor;
 
-fn metric() -> Schwarzchild {
-    Schwarzchild { rs: 2.0, c: 1.0 }
+fn metric() -> Schwarzschild {
+    Schwarzschild { rs: 2.0, c: 1.0 }
 }
 
 fn coords() -> Coords<f64, 4> {

@@ -73,6 +73,7 @@ impl MetricField<4> for Minkowski {
 }
 
 /// Standard metric of the 2-sphere in `(r, θ, φ)`.
+/// i.e., flat three-dimensional Euclidean metric in spherical coordinates
 pub struct SphericalPolar;
 
 impl MetricField<3> for SphericalPolar {
@@ -98,17 +99,19 @@ impl MetricField<3> for SphericalPolar {
     }
 }
 
-/// Schwarzschild metric in `(t, r, θ, φ)`, matching the Python reference's
-/// conventions: `g00 = −(1 − rs/r)·c²`, `g11 = 1/(1 − rs/r)`, `g22 = r²`,
-/// `g33 = r² sin²θ`.
-pub struct Schwarzchild {
+/// Schwarzschild metric in `(t, r, θ, φ)`
+/// - `g00 = −(1 − rs/r)·c²`
+/// - `g11 = 1/(1 − rs/r)`
+/// - `g22 = r²`
+/// - `g33 = r² sin²θ`
+pub struct Schwarzschild {
     /// Schwarzschild radius `2GM/c²` in the chosen unit system.
     pub rs: f64,
     /// Speed of light, as used in `g00`.
     pub c: f64,
 }
 
-impl MetricField<4> for Schwarzchild {
+impl MetricField<4> for Schwarzschild {
     fn g<V>(&self, x: V) -> MetricTensor<V>
     where
         V: Euclidean + Tensor<Hand = Right>,

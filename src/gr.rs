@@ -1,7 +1,5 @@
-//! General-relativity index algebra: connection, curvature, Einstein field
-//! equations. The math mirrors the Python reference implementation exactly
-//! (verified formula-by-formula); only the differentiation entry point is
-//! ours (see `crate::ad`).
+//! General-relativity index algebra: connection, curvature, and Einstein field
+//! equations.
 
 use num_traits::{Zero, real::Real};
 
@@ -77,7 +75,7 @@ pub fn christoffel_symbols<const N: usize, M: MetricField<N>>(
 }
 
 /// T^j_kl = Γ^j_kl − Γ^j_lk. Identically zero for a Levi-Civita connection —
-/// a verification of the machinery, matching the Python reference.
+/// a verification of the machinery
 pub fn torsion_tensor<const N: usize, M: MetricField<N>>(
     metric: &M,
     x: &Coords<f64, N>,
@@ -166,7 +164,7 @@ pub fn ricci_scalar<const N: usize, M: MetricField<N>>(metric: &M, x: &Coords<f6
 }
 
 /// K = R^ijkl R_ijkl — the Kretschmann invariant, coordinate-independent
-/// singularity detector. Port of the Python einsum chain:
+/// singularity detector. Explicit tensor contraction:
 ///   upper[i][p][q][r] = Σ_jkl g^pj g^qk g^rl R[i][j][k][l]
 ///   lower[p][j][k][l] = Σ_i  g_pi R[i][j][k][l]
 ///   K = Σ_ijkl upper[i][j][k][l] · lower[i][j][k][l]
@@ -234,7 +232,7 @@ pub fn einstein_tensor<const N: usize, M: MetricField<N>>(
 }
 
 /// T_ij = G_ij / κ with κ = 8πG/c⁴ — mass-energy content from the field
-/// equations. Constants match the Python reference exactly.
+/// equations.
 pub fn stress_energy_momentum_tensor<const N: usize, M: MetricField<N>>(
     metric: &M,
     x: &Coords<f64, N>,

@@ -1,8 +1,9 @@
 //! Schwarzschild vacuum and Kretschmann verification.
 
 use autograv::{
-    Schwarzchild, as_t2, as_t3, as_t4, christoffel_symbols, einstein_tensor, kretschmann_invariant,
-    ricci_scalar, ricci_tensor, riemann_tensor, stress_energy_momentum_tensor, torsion_tensor,
+    Schwarzschild, as_t2, as_t3, as_t4, christoffel_symbols, einstein_tensor,
+    kretschmann_invariant, ricci_scalar, ricci_tensor, riemann_tensor,
+    stress_energy_momentum_tensor, torsion_tensor,
 };
 use diffable::coords::Coords;
 use diffable::traits::Tensor;
@@ -12,7 +13,7 @@ fn main() {
     let speed_of_light = 299_792_458.0_f64;
     let mass = 4.297e6_f64 * 1.989e30_f64;
     let schwarzschild_radius = 2.0 * gravitational_constant * mass / speed_of_light.powi(2);
-    let metric = Schwarzchild {
+    let metric = Schwarzschild {
         rs: schwarzschild_radius,
         c: speed_of_light,
     };

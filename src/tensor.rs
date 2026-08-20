@@ -116,7 +116,7 @@ pub fn permute4<F: Copy, const N: usize>(src: &T4<F, N>, [p0, p1, p2, p3]: [usiz
 ///
 /// Panics on a singular matrix (the zero primal trips diffable's `NonZero`
 /// division invariant) — the API is deliberately total, like the Python
-/// reference
+/// implementation
 /// TODO: but maybe there's a more idiomatic way to do it in Rust?
 pub fn invert<F: Real, const N: usize>(m: &T2<F, N>) -> T2<F, N> {
     let mut a = *m;
@@ -173,8 +173,8 @@ pub fn invert<F: Real, const N: usize>(m: &T2<F, N>) -> T2<F, N> {
     inv
 }
 
-/// Python's `close_to_zero` decorator: round coordinates within `TOLERANCE` to
-/// zero. Applied at each public GR boundary, not inside the AD path.
+/// Round tensor components within `TOLERANCE` to zero. This is applied at
+/// public GR boundaries and not inside the automatic-differentiation path.
 pub fn close_to_zero<T: Tensor>(t: T) -> T
 where
     T::F: Real,
