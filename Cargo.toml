@@ -2,6 +2,7 @@
 name = "autograv"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 authors = ["Baalateja Kataru <baalateja.k@gmail.com>"]
 description = "Tensor calculus engine for numerical relativity (Christoffel, Riemann, Einstein, ...) built on diffable's typed automatic differentiation"
 readme = "README.rust.md"
