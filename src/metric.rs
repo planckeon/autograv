@@ -2,65 +2,33 @@
 //! `(0, 2)` tensor field, generic over the scalar so diffable's jets flow
 //! through every layer of differentiation.
 
-use num_traits::{One, Zero, real::Real};
+use num_traits::{NumCast, One, Zero, real::Real};
 
-use diffable::traits::{
-    Cat, Dual, Euclidean, Field, Right, Sinister, Tensor,
-    calculus::{Jet, JetRegion, TensorProduct},
-    ι,
-};
+use diffable::traits::{Euclidean, Right, Tensor, calculus::TensorProduct};
 
-/// The covariant metric tensor type `g_ij` as `V* ⊗ V*`.
-///
-/// `Sinister` flips `Dual<V>`'s hand back to `Right` so the balanced tensor
-/// product is well-formed; coordinates are identical to `Dual<V> ⊗ Dual<V>`
-pub type MetricTensor<V> = TensorProduct<Sinister<Dual<V>>, Dual<V>>;
-
-/// Injects a captured `f64` constant through arbitrarily many jet layers.
-///
-/// ponytail: mirrors diffable's `ConstantRoute` concept in 8 lines.
-/// `Field::Fixed` only reaches one layer deep; this recurses. When `d()`
-/// supports metrics, diffable's route machinery replaces this trait.
-pub trait ScalarConst: Sized {
-    fn from_const(x: f64) -> Self;
-}
-
-impl ScalarConst for f64 {
-    fn from_const(x: f64) -> Self {
-        x
-    }
-}
-
-impl<𝒞: Cat, S, const N: usize> ScalarConst for Jet<𝒞, S, N>
-where
-    S: ScalarConst + Field + ι,
-    S::C: JetRegion<𝒞>,
-{
-    fn from_const(x: f64) -> Self {
-        Jet::new(S::from_const(x), [S::zero(); N])
-    }
-}
+use crate::gr::MetricTensor;
 
 /// A metric field on an `N`-dimensional coordinate space.
 ///
 /// Implement `g` once, generically over `V`; the same body evaluates at real
 /// points and at jet-valued points during differentiation.
-pub trait MetricField<const N: usize> {
+pub trait MetricField {
     fn g<V>(&self, x: V) -> MetricTensor<V>
     where
         V: Euclidean + Tensor<Hand = Right>,
-        V::F: Real + ScalarConst;
+        V::F: Real;
 }
 
 /// Minkowski metric, signature `(−, +, +, +)`, constant on `R⁴`.
 pub struct Minkowski;
 
-impl MetricField<4> for Minkowski {
+impl MetricField for Minkowski {
     fn g<V>(&self, x: V) -> MetricTensor<V>
     where
         V: Euclidean + Tensor<Hand = Right>,
-        V::F: Real + ScalarConst,
+        V::F: Real,
     {
+        const { assert!(V::N == 4) };
         let _ = x;
         TensorProduct::from_fn_ij(|i, j| {
             if i == j {
@@ -76,12 +44,13 @@ impl MetricField<4> for Minkowski {
 /// i.e., flat three-dimensional Euclidean metric in spherical coordinates
 pub struct SphericalPolar;
 
-impl MetricField<3> for SphericalPolar {
+impl MetricField for SphericalPolar {
     fn g<V>(&self, x: V) -> MetricTensor<V>
     where
         V: Euclidean + Tensor<Hand = Right>,
-        V::F: Real + ScalarConst,
+        V::F: Real,
     {
+        const { assert!(V::N == 3) };
         let r = x[0];
         let r2 = r * r;
         let s2 = r2 * x[1].sin() * x[1].sin();
@@ -111,15 +80,16 @@ pub struct Schwarzschild {
     pub c: f64,
 }
 
-impl MetricField<4> for Schwarzschild {
+impl MetricField for Schwarzschild {
     fn g<V>(&self, x: V) -> MetricTensor<V>
     where
         V: Euclidean + Tensor<Hand = Right>,
-        V::F: Real + ScalarConst,
+        V::F: Real,
     {
+        const { assert!(V::N == 4) };
         let r = x[1];
-        let f = V::F::one() - V::F::from_const(self.rs) / r;
-        let c2 = V::F::from_const(self.c * self.c);
+        let f = V::F::one() - <V::F as NumCast>::from(self.rs).unwrap() / r;
+        let c2 = <V::F as NumCast>::from(self.c * self.c).unwrap();
         let r2 = r * r;
         let s2 = r2 * x[2].sin() * x[2].sin();
         TensorProduct::from_fn_ij(|i, j| {

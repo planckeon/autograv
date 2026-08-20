@@ -1,9 +1,8 @@
 //! Full flat-space spherical-coordinate verification.
 
 use autograv::{
-    SphericalPolar, as_t2, as_t3, as_t4, christoffel_symbols, einstein_tensor,
-    kretschmann_invariant, ricci_scalar, ricci_tensor, riemann_tensor,
-    stress_energy_momentum_tensor, torsion_tensor,
+    SphericalPolar, christoffel_symbols, component, einstein_tensor, kretschmann_invariant,
+    ricci_scalar, ricci_tensor, riemann_tensor, stress_energy_momentum_tensor, torsion_tensor,
 };
 use diffable::coords::Coords;
 use diffable::traits::Tensor;
@@ -16,12 +15,12 @@ fn main() {
         std::f64::consts::FRAC_PI_2,
     ]);
 
-    let gamma = as_t3::<3>(&christoffel_symbols(&metric, &coordinates));
+    let gamma = &christoffel_symbols(&metric, &coordinates);
     let torsion = torsion_tensor(&metric, &coordinates);
-    let riemann = as_t4::<3>(&riemann_tensor(&metric, &coordinates));
-    let ricci = as_t2::<3>(&ricci_tensor(&metric, &coordinates));
-    let einstein = as_t2::<3>(&einstein_tensor(&metric, &coordinates));
-    let stress_energy = as_t2::<3>(&stress_energy_momentum_tensor(&metric, &coordinates));
+    let riemann = &riemann_tensor(&metric, &coordinates);
+    let ricci = &ricci_tensor(&metric, &coordinates);
+    let einstein = &einstein_tensor(&metric, &coordinates);
+    let stress_energy = &stress_energy_momentum_tensor(&metric, &coordinates);
 
     println!("Christoffel symbols: {gamma:?}");
     println!("Torsion tensor: {:?}", torsion.iter().collect::<Vec<_>>());
@@ -35,19 +34,12 @@ fn main() {
         kretschmann_invariant(&metric, &coordinates)
     );
 
-    assert!((gamma[0][1][1] + 5.0).abs() < 1e-12);
+    assert!((component(gamma, [0, 1, 1]) + 5.0).abs() < 1e-12);
     assert!(torsion.iter().all(|&v| v == 0.0));
-    assert!(
-        riemann
-            .iter()
-            .flatten()
-            .flatten()
-            .flatten()
-            .all(|&v| v == 0.0)
-    );
-    assert!(ricci.iter().flatten().all(|&v| v == 0.0));
+    assert!(riemann.iter().all(|&v| v == 0.0));
+    assert!(ricci.iter().all(|&v| v == 0.0));
     assert_eq!(ricci_scalar(&metric, &coordinates), 0.0);
-    assert!(einstein.iter().flatten().all(|&v| v == 0.0));
-    assert!(stress_energy.iter().flatten().all(|&v| v == 0.0));
+    assert!(einstein.iter().all(|&v| v == 0.0));
+    assert!(stress_energy.iter().all(|&v| v == 0.0));
     assert_eq!(kretschmann_invariant(&metric, &coordinates), 0.0);
 }

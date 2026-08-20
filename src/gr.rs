@@ -1,244 +1,611 @@
-//! General-relativity index algebra: connection, curvature, and Einstein field
-//! equations.
+use num_traits::{NumCast, One, Zero, real::Real as _};
 
-use num_traits::{Zero, real::Real};
-
-use diffable::coords::Coords;
 use diffable::traits::{
-    Dual, Euclidean, Right, Tensor,
-    calculus::{JetRegion, TensorProduct},
-    ι, 𝐑𝐞𝐚𝐥,
+    Array, BothSided, Cat, Dual, DualSinistered, Dualized, Euclidean, Field, Left, NormalizeWith,
+    Real, Right, Sinister, Sinistered, Tensor, Undecorated,
+    calculus::{
+        Contract, Here, Jet, JetVector, OnLeft, OnRight, Reassociate, Swap, TensorProduct,
+        ThroughSinister, d,
+    },
+    𝐑𝐞𝐚𝐥,
 };
 
-use crate::ad::jacobian_of;
-use crate::metric::{MetricField, ScalarConst};
-use crate::tensor::{
-    T2, T3, T4, close_to_zero, close_to_zero_scalar, flatten_3, flatten_4, from_flat_2,
-    from_flat_3, from_flat_4, invert, permute3, permute4, to_flat,
-};
+use crate::metric::MetricField;
 
-/// Γ^j_kl — mixed `(1, 2)` connection tensor.
-pub type Christoffel<V> = TensorProduct<TensorProduct<V, Dual<V>>, Dual<V>>;
-/// R^j_klm — mixed `(1, 3)` curvature tensor.
-pub type Riemann<V> = TensorProduct<Christoffel<V>, Dual<V>>;
-/// R_kl — covariant `(0, 2)` tensor (same shape as the metric).
-pub type Ricci<V> = crate::metric::MetricTensor<V>;
-
-/// Γ^j_kl = ½ g^jm (∂_l g_mk + ∂_k g_lm − ∂_m g_kl), evaluated at `x`.
-///
-/// Generic over the point presentation `V` so the same code runs at real
-/// points (`f64`) and at jet points (nested `JetVector`) — the latter is what
-/// lets `riemann_tensor` differentiate the connection.
-pub(crate) fn christoffel_generic<V, const N: usize, M>(metric: &M, x: V) -> Christoffel<V>
+pub fn component<T, const R: usize>(
+    tensor: &T,
+    index: [usize; R],
+) -> T::F
 where
-    V: Euclidean + Tensor<Hand = Right> + Copy,
-    V::F: Real + ScalarConst + ι<C: JetRegion<𝐑𝐞𝐚𝐥::𝒞>>,
-    M: MetricField<N>,
+    T: Tensor,
+    T::F: Copy,
 {
-    // g_ij and its inverse at this point.
-    let g = metric.g(x);
-    let g_arr: T2<V::F, N> = from_flat_2(&to_flat(&g));
-    let g_inv = invert(&g_arr);
+    let dimension = (1..=T::N)
+        .find(|&i| i.pow(R as u32) == T::N)
+        .expect("tensor component count is not an exact R-th power");
 
-    // ∂g_ab/∂x^c via diffable jets: D[a][b][c].
-    let d_flat = jacobian_of(|v| metric.g(v), &x);
-    let d: T3<V::F, N> = from_flat_3(&d_flat);
+    let flat = index
+        .into_iter()
+        .fold(0, |flat, i| flat * dimension + i);
 
-    // S[m][k][l] = ∂_l g_mk + ∂_k g_lm − ∂_m g_kl
-    let d_mlk = permute3(&d, [2, 0, 1]); // dst[m][k][l] = d[l][m][k]
-    let d_klm = permute3(&d, [1, 2, 0]); // dst[m][k][l] = d[k][l][m]
+    tensor[flat]
+}
 
-    let mut gamma = [[[V::F::zero(); N]; N]; N];
-    // 0.5 * Σ_m g^jm · S[m][k][l]
-    let half = V::F::from_const(0.5);
-    for j in 0..N {
-        for k in 0..N {
-            for l in 0..N {
-                let mut s = V::F::zero();
-                for m in 0..N {
-                    s = s + g_inv[j][m] * (d[m][k][l] + d_mlk[m][k][l] - d_klm[m][k][l]);
-                }
-                gamma[j][k][l] = s * half;
+pub type MetricTensor<V> = TensorProduct<Sinister<Dual<V>>, Dual<V>>;
+pub type Einstein<V> = MetricTensor<V>;
+pub type InverseMetric<V> = TensorProduct<V, Sinister<V>>;
+pub type Christoffel<V> = TensorProduct<TensorProduct<V, Dual<V>>, Dual<V>>;
+pub type Riemann<V> = TensorProduct<Christoffel<V>, Dual<V>>;
+pub type Ricci<V> = MetricTensor<V>;
+
+fn commute_metric_jet<C: Cat, V: Tensor<Hand = Right, Action = BothSided>>(
+    g: MetricTensor<JetVector<C, V>>,
+) -> JetVector<C, MetricTensor<V>>
+where
+    JetVector<C, V>: Tensor<Hand = Right, Action = BothSided, F = Jet<C, V::F>>,
+    Jet<C, V::F>: Field,
+{
+    <JetVector<C, MetricTensor<V>> as Tensor>::from_fn(|i| g[i])
+}
+
+fn commute_christoffel_jet<C: Cat, V: Tensor<Hand = Right, Action = BothSided>>(
+    gamma: Christoffel<JetVector<C, V>>,
+) -> JetVector<C, Christoffel<V>>
+where
+    JetVector<C, V>: Tensor<Hand = Right, Action = BothSided, F = Jet<C, V::F>>,
+    Jet<C, V::F>: Field,
+{
+    <JetVector<C, Christoffel<V>> as Tensor>::from_fn(|i| gamma[i])
+}
+
+fn inverse_metric<V>(g: MetricTensor<V>) -> InverseMetric<V>
+where
+    V: Tensor<Hand = Right, Action = BothSided>,
+    V::F: Real,
+{
+    type Row<V> = <V as Tensor>::Array<<V as Tensor>::F>;
+
+    let mut a: V::Array<Row<V>> = V::Array::from_fn(|i| V::Array::from_fn(|j| g[i * V::N + j]));
+
+    let mut inverse: V::Array<Row<V>> = V::Array::from_fn(|i| {
+        V::Array::from_fn(|j| if i == j { V::F::one() } else { V::F::zero() })
+    });
+
+    for column in 0..V::N {
+        // Partial pivoting.
+        let mut pivot = column;
+        let mut pivot_abs = a[column][column].abs();
+
+        for row in column + 1..V::N {
+            let candidate = a[row][column].abs();
+
+            if candidate > pivot_abs {
+                pivot = row;
+                pivot_abs = candidate;
+            }
+        }
+
+        assert!(
+            !a[pivot][column].is_zero(),
+            "attempted to invert a degenerate metric"
+        );
+
+        // Swap pivot row into place.
+        if pivot != column {
+            for j in 0..V::N {
+                let tmp = a[column][j];
+                a[column][j] = a[pivot][j];
+                a[pivot][j] = tmp;
+
+                let tmp = inverse[column][j];
+                inverse[column][j] = inverse[pivot][j];
+                inverse[pivot][j] = tmp;
+            }
+        }
+
+        // Normalize the pivot row.
+        let scale = a[column][column];
+
+        for j in 0..V::N {
+            a[column][j] = a[column][j] / scale;
+            inverse[column][j] = inverse[column][j] / scale;
+        }
+
+        // Eliminate this column from every other row.
+        for row in 0..V::N {
+            if row == column {
+                continue;
+            }
+
+            let scale = a[row][column];
+
+            if scale.is_zero() {
+                continue;
+            }
+
+            for j in 0..V::N {
+                a[row][j] = a[row][j] - scale * a[column][j];
+
+                inverse[row][j] = inverse[row][j] - scale * inverse[column][j];
             }
         }
     }
 
-    Christoffel::<V>::from_fn(|i| flatten_3(&gamma)[i])
+    InverseMetric::<V>::from_fn(|n| {
+        let i = n / V::N;
+        let j = n % V::N;
+
+        inverse[i][j]
+    })
 }
 
-/// Affine connection coefficients (Christoffel symbols of the second kind).
-pub fn christoffel_symbols<const N: usize, M: MetricField<N>>(
-    metric: &M,
-    x: &Coords<f64, N>,
-) -> Christoffel<Coords<f64, N>> {
-    close_to_zero(christoffel_generic(metric, *x))
+pub fn christoffel_symbols<V, M>(metric: &M, x: &V) -> Christoffel<V>
+where
+    V: Euclidean<Hand = Right>
+        + Copy
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, V>: Euclidean<Hand = Right, Action = BothSided, F = Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+    M: MetricField,
+{
+    type Dg<V> = TensorProduct<MetricTensor<V>, Dual<V>>;
+    type RightAssociatedDg<V> =
+        TensorProduct<Sinister<Dual<V>>, Sinister<TensorProduct<Sinister<Dual<V>>, Dual<V>>>>;
+
+    let g: MetricTensor<V> = metric.g(x.clone());
+    let g_inv: InverseMetric<V> = inverse_metric(g);
+
+    // this deref then clone is awkward
+    let dg: Dg<V> = (*d(|x| commute_metric_jet(metric.g(x))).at(*x)).clone();
+
+    let d_lmk_1: RightAssociatedDg<V> = dg.clone().swap::<OnLeft<Here>>().reassociate::<Right>();
+
+    // TODO(diffable):
+    //
+    //     d_lmk_2
+    //         .swap::<OnRight<ThroughSinister<Here>>>()
+    //
+    // Once SwapKernel can descend through Sinister.
+    let d_lmk_2: RightAssociatedDg<V> = TensorProduct::from_fn_ij(|i, jk| {
+        let j = jk / V::N;
+        let k = jk % V::N;
+
+        d_lmk_1[(i, k * V::N + j)]
+    });
+
+    let d_lmk: Dg<V> = d_lmk_2.reassociate::<Left>();
+
+    let d_klm_1: RightAssociatedDg<V> = dg.clone().reassociate::<Right>();
+
+    // Same missing ThroughSinister swap.
+    let d_klm_2: RightAssociatedDg<V> = TensorProduct::from_fn_ij(|i, jk| {
+        let j = jk / V::N;
+        let k = jk % V::N;
+
+        d_klm_1[(i, k * V::N + j)]
+    });
+
+    let d_klm: Dg<V> = d_klm_2.reassociate::<Left>().swap::<OnLeft<Here>>();
+
+    let koszul: Dg<V> = dg + d_lmk - d_klm;
+
+    let gamma: Christoffel<V> = TensorProduct::pure(g_inv, Sinister(koszul))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Right>>>()
+        .contract::<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>();
+
+    let half = V::F::one() / (V::F::from_nat(2));
+
+    gamma * half
 }
 
-/// T^j_kl = Γ^j_kl − Γ^j_lk. Identically zero for a Levi-Civita connection —
-/// a verification of the machinery
-pub fn torsion_tensor<const N: usize, M: MetricField<N>>(
-    metric: &M,
-    x: &Coords<f64, N>,
-) -> Christoffel<Coords<f64, N>> {
-    let g = christoffel_generic(metric, *x);
-    let flat = to_flat(&g);
-    let arr: T3<f64, N> = from_flat_3(&flat);
-    let swapped = permute3(&arr, [0, 2, 1]); // dst[j][k][l] = arr[j][l][k]
-    let mut out = [[[0.0; N]; N]; N];
-    for j in 0..N {
-        for k in 0..N {
-            for l in 0..N {
-                out[j][k][l] = arr[j][k][l] - swapped[j][k][l];
-            }
-        }
-    }
-    close_to_zero(Christoffel::<Coords<f64, N>>::from_fn(|i| {
-        flatten_3(&out)[i]
-    }))
+pub fn torsion<V>(gamma: Christoffel<V>) -> Christoffel<V>
+where
+    V: Euclidean<Hand = Right>
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>,
+{
+    type RightAssociatedGamma<V> =
+        TensorProduct<V, Sinister<TensorProduct<Sinister<Dual<V>>, Dual<V>>>>;
+
+    let swapped_1: RightAssociatedGamma<V> = gamma.clone().reassociate::<Right>();
+
+    // TODO(diffable):
+    //
+    // swapped_1.swap::<OnRight<ThroughSinister<Here>>>()
+    let swapped_2: RightAssociatedGamma<V> = TensorProduct::from_fn_ij(|i, jk| {
+        let j = jk / V::N;
+        let k = jk % V::N;
+
+        swapped_1[(i, k * V::N + j)]
+    });
+
+    let swapped: Christoffel<V> = swapped_2.reassociate::<Left>();
+
+    gamma - swapped
 }
 
-/// R^j_klm = ∂_m Γ^j_kl − ∂_l Γ^j_km + Γ^j_rm Γ^r_kl − Γ^j_rl Γ^r_km.
-pub(crate) fn riemann_raw<const N: usize, M: MetricField<N>>(
-    metric: &M,
-    x: &Coords<f64, N>,
-) -> T4<f64, N> {
-    let gamma_flat = to_flat(&christoffel_generic(metric, *x));
-    let gamma: T3<f64, N> = from_flat_3(&gamma_flat);
-
-    // ∂_m Γ^j_kl via jets through the generic connection pipeline.
-    let d_flat = jacobian_of(|v| christoffel_generic(metric, v), x);
-    let dg: T4<f64, N> = from_flat_4(&d_flat);
-    let dg_swap = permute4(&dg, [0, 1, 3, 2]); // dst[j][k][l][m] = dg[j][k][m][l]
-
-    let mut r = [[[[0.0; N]; N]; N]; N];
-    for j in 0..N {
-        for k in 0..N {
-            for l in 0..N {
-                for m in 0..N {
-                    let t3: f64 = (0..N).map(|s| gamma[j][s][m] * gamma[s][k][l]).sum();
-                    let t4: f64 = (0..N).map(|s| gamma[j][s][l] * gamma[s][k][m]).sum();
-                    r[j][k][l][m] = dg[j][k][l][m] - dg_swap[j][k][l][m] + t3 - t4;
-                }
-            }
-        }
-    }
-    r
+pub fn torsion_tensor<V, M>(metric: &M, x: &V) -> Christoffel<V>
+where
+    V: Euclidean<Hand = Right>
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>
+        + Copy,
+    M: MetricField,
+{
+    torsion(christoffel_symbols(metric, x))
 }
 
-/// Riemann curvature tensor.
-pub fn riemann_tensor<const N: usize, M: MetricField<N>>(
-    metric: &M,
-    x: &Coords<f64, N>,
-) -> Riemann<Coords<f64, N>> {
-    let r = riemann_raw(metric, x);
-    close_to_zero(Riemann::<Coords<f64, N>>::from_fn(|i| flatten_4(&r)[i]))
+pub fn riemann_tensor<V, M>(metric: &M, x: &V) -> Riemann<V>
+where
+    V: Euclidean<Hand = Right>
+        + Copy
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>,
+    Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>: Real,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, V>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>,
+        > + Copy
+        + NormalizeWith<Undecorated, Normalized = JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>
+        + NormalizeWith<Dualized, Normalized = Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>>,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+        >,
+    M: MetricField,
+{
+    let gamma: Christoffel<V> = christoffel_symbols(metric, x);
+
+    let dgamma: Riemann<V> =
+        (*d(|x| commute_christoffel_jet(christoffel_symbols(metric, &x))).at(*x)).clone();
+
+    let dgamma_kl: Riemann<V> = Riemann::<V>::from_fn(|n| {
+        let i = n / (V::N * V::N * V::N);
+        let j = (n / (V::N * V::N)) % V::N;
+        let k = (n / V::N) % V::N;
+        let l = n % V::N;
+
+        dgamma[i * V::N * V::N * V::N + j * V::N * V::N + l * V::N + k]
+    });
+
+    let derivative: Riemann<V> = dgamma_kl - dgamma;
+
+    let quadratic_raw = TensorProduct::pure(gamma.clone(), Sinister(gamma))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Right>>>()
+        .contract::<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>();
+
+    let quadratic: Riemann<V> = Riemann::<V>::from_fn(|n| {
+        let i = n / (V::N * V::N * V::N);
+        let j = (n / (V::N * V::N)) % V::N;
+        let k = (n / V::N) % V::N;
+        let l = n % V::N;
+
+        quadratic_raw[i * V::N * V::N * V::N + k * V::N * V::N + j * V::N + l]
+    });
+
+    let quadratic_kl: Riemann<V> = Riemann::<V>::from_fn(|n| {
+        let i = n / (V::N * V::N * V::N);
+        let j = (n / (V::N * V::N)) % V::N;
+        let k = (n / V::N) % V::N;
+        let l = n % V::N;
+
+        quadratic[i * V::N * V::N * V::N + j * V::N * V::N + l * V::N + k]
+    });
+
+    derivative + quadratic - quadratic_kl
 }
 
-/// R_kl = Σ_j R^j_klj.
-pub fn ricci_tensor<const N: usize, M: MetricField<N>>(
-    metric: &M,
-    x: &Coords<f64, N>,
-) -> Ricci<Coords<f64, N>> {
-    let r = riemann_raw(metric, x);
-    let mut out = [[0.0; N]; N];
-    for k in 0..N {
-        for l in 0..N {
-            out[k][l] = (0..N).map(|j| r[j][k][l][j]).sum();
-        }
-    }
-    close_to_zero(Ricci::<Coords<f64, N>>::from_fn(|i| out[i / N][i % N]))
+pub fn ricci_tensor<V, M>(metric: &M, x: &V) -> Ricci<V>
+where
+    // exactly the same bounds as riemann()
+    V: Euclidean<Hand = Right>
+        + Copy
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>,
+    Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>: Real,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, V>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>,
+        > + Copy
+        + NormalizeWith<Undecorated, Normalized = JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>
+        + NormalizeWith<Dualized, Normalized = Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>>,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+        >,
+    M: MetricField,
+{
+    let r = riemann_tensor(metric, x);
+
+    // [i, j, k, l] -> [i, k, j, l]
+    //
+    // TODO(diffable): replace this with the appropriate structural swap.
+    let contracted_order: Riemann<V> = Riemann::<V>::from_fn(|n| {
+        let i = n / (V::N * V::N * V::N);
+        let j = (n / (V::N * V::N)) % V::N;
+        let k = (n / V::N) % V::N;
+        let l = n % V::N;
+
+        r[i * V::N * V::N * V::N + k * V::N * V::N + j * V::N + l]
+    });
+
+    contracted_order.contract::<OnLeft<OnLeft<Here>>>()
 }
 
-/// R = g^kl R_kl.
-pub fn ricci_scalar<const N: usize, M: MetricField<N>>(metric: &M, x: &Coords<f64, N>) -> f64 {
-    let g_arr: T2<f64, N> = from_flat_2(&to_flat(&metric.g(*x)));
-    let g_inv = invert(&g_arr);
-    let ricci = to_flat(&ricci_tensor(metric, x));
-    let mut s = 0.0;
-    for k in 0..N {
-        for l in 0..N {
-            s += g_inv[k][l] * ricci[k * N + l];
-        }
-    }
-    close_to_zero_scalar(s)
+pub fn ricci_scalar<V, M>(metric: &M, x: &V) -> V::F
+where
+    // same bounds as ricci()/riemann()
+    V: Euclidean<Hand = Right>
+        + Copy
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, V>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>,
+        > + Copy
+        + NormalizeWith<Undecorated, Normalized = JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>
+        + NormalizeWith<Dualized, Normalized = Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>>,
+    Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>: Real,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+        >,
+    M: MetricField,
+{
+    let g_inv = inverse_metric(metric.g(*x));
+    let ricci = ricci_tensor(metric, x);
+
+    let once: TensorProduct<V, Dual<V>> = TensorProduct::pure(g_inv, Sinister(ricci))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Right>>()
+        .contract::<OnLeft<OnRight<ThroughSinister<Here>>>>();
+
+    once.contract::<Here>()
 }
 
-/// K = R^ijkl R_ijkl — the Kretschmann invariant, coordinate-independent
-/// singularity detector. Explicit tensor contraction:
-///   upper[i][p][q][r] = Σ_jkl g^pj g^qk g^rl R[i][j][k][l]
-///   lower[p][j][k][l] = Σ_i  g_pi R[i][j][k][l]
-///   K = Σ_ijkl upper[i][j][k][l] · lower[i][j][k][l]
-pub fn kretschmann_invariant<const N: usize, M: MetricField<N>>(
-    metric: &M,
-    x: &Coords<f64, N>,
-) -> f64 {
-    let r = riemann_raw(metric, x);
-    let g_arr: T2<f64, N> = from_flat_2(&to_flat(&metric.g(*x)));
-    let g_inv = invert(&g_arr);
+pub fn einstein_tensor<V, M>(metric: &M, x: &V) -> Einstein<V>
+where
+    // same riemann bounds
+    V: Euclidean<Hand = Right>
+        + Copy
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, V>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>,
+        > + Copy
+        + NormalizeWith<Undecorated, Normalized = JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>
+        + NormalizeWith<Dualized, Normalized = Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>>,
+    Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>: Real,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+        >,
+    M: MetricField,
+{
+    let g = metric.g(*x);
+    let ricci = ricci_tensor(metric, x);
+    let scalar = ricci_scalar(metric, x);
 
-    let mut upper = [[[[0.0; N]; N]; N]; N];
-    let mut lower = [[[[0.0; N]; N]; N]; N];
-    for i in 0..N {
-        for p in 0..N {
-            for q in 0..N {
-                for rr in 0..N {
-                    let mut s = 0.0;
-                    for j in 0..N {
-                        for k in 0..N {
-                            for l in 0..N {
-                                s += g_inv[p][j] * g_inv[q][k] * g_inv[rr][l] * r[i][j][k][l];
-                            }
-                        }
-                    }
-                    upper[i][p][q][rr] = s;
-                }
-            }
-        }
-    }
-    for p in 0..N {
-        for j in 0..N {
-            for k in 0..N {
-                for l in 0..N {
-                    lower[p][j][k][l] = (0..N).map(|i| g_arr[p][i] * r[i][j][k][l]).sum();
-                }
-            }
-        }
-    }
-    let k = (0..N)
-        .flat_map(|i| {
-            (0..N).flat_map(move |j| {
-                (0..N).flat_map(move |k| (0..N).map(move |l| upper[i][j][k][l] * lower[i][j][k][l]))
-            })
+    let half = V::F::one() / V::F::from_nat(2);
+
+    ricci - g * (scalar * half)
+}
+
+pub fn kretschmann_invariant<V, M>(metric: &M, x: &V) -> V::F
+where
+    // same bounds as riemann()
+    V: Euclidean<Hand = Right>
+        + Copy
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>,
+    Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>: Real,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, V>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>,
+        > + Copy
+        + NormalizeWith<Undecorated, Normalized = JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>
+        + NormalizeWith<Dualized, Normalized = Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>>,
+    Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>: Real,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+        >,
+    M: MetricField,
+{
+    type CovariantRiemann<V> =
+        TensorProduct<TensorProduct<TensorProduct<Sinister<Dual<V>>, Dual<V>>, Dual<V>>, Dual<V>>;
+
+    let g = metric.g(*x);
+    let g_inv = inverse_metric(g.clone());
+
+    let r: Riemann<V> = riemann_tensor(metric, x);
+
+    let r_down: CovariantRiemann<V> = TensorProduct::pure(g, Sinister(r.clone()))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Left>>>()
+        .reassociate::<OnLeft<OnLeft<OnLeft<Right>>>>()
+        .contract::<OnLeft<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>>();
+
+    type Raised1<V> = TensorProduct<TensorProduct<TensorProduct<V, Dual<V>>, Dual<V>>, Dual<V>>;
+
+    type Raised2<V> = TensorProduct<TensorProduct<TensorProduct<V, Sinister<V>>, Dual<V>>, Dual<V>>;
+
+    type Raised3<V> =
+        TensorProduct<TensorProduct<TensorProduct<V, Sinister<V>>, Sinister<V>>, Dual<V>>;
+
+    type Raised4<V> =
+        TensorProduct<TensorProduct<TensorProduct<V, Sinister<V>>, Sinister<V>>, Sinister<V>>;
+
+    // R^{a}{}_{bcd}
+    let r1: Raised1<V> = r;
+
+    // R^{ab}{}_{cd}
+    let r2: Raised2<V> = Raised2::<V>::from_fn(|n| {
+        let a = n / (V::N * V::N * V::N);
+        let b = (n / (V::N * V::N)) % V::N;
+        let c = (n / V::N) % V::N;
+        let deez = n % V::N;
+
+        (0..V::N).fold(V::F::zero(), |sum, j| {
+            sum + g_inv[b * V::N + j]
+                * r1[a * V::N * V::N * V::N + j * V::N * V::N + c * V::N + deez]
         })
-        .sum();
-    close_to_zero_scalar(k)
+    });
+
+    // R^{abc}{}_d
+    let r3: Raised3<V> = Raised3::<V>::from_fn(|n| {
+        let a = n / (V::N * V::N * V::N);
+        let b = (n / (V::N * V::N)) % V::N;
+        let c = (n / V::N) % V::N;
+        let deez = n % V::N;
+
+        (0..V::N).fold(V::F::zero(), |sum, k| {
+            sum + g_inv[c * V::N + k]
+                * r2[a * V::N * V::N * V::N + b * V::N * V::N + k * V::N + deez]
+        })
+    });
+
+    // R^{abcd}
+    let r_up: Raised4<V> = Raised4::<V>::from_fn(|n| {
+        let a = n / (V::N * V::N * V::N);
+        let b = (n / (V::N * V::N)) % V::N;
+        let c = (n / V::N) % V::N;
+        let deez = n % V::N;
+
+        (0..V::N).fold(V::F::zero(), |sum, l| {
+            sum + g_inv[deez * V::N + l]
+                * r3[a * V::N * V::N * V::N + b * V::N * V::N + c * V::N + l]
+        })
+    });
+
+    r_down
+        .iter()
+        .zip(r_up.iter())
+        .fold(V::F::zero(), |sum, (down, up)| sum + *down * *up)
 }
 
-/// G_ij = R_ij − ½ g_ij R — the left-hand side of the Einstein field equations.
-pub fn einstein_tensor<const N: usize, M: MetricField<N>>(
-    metric: &M,
-    x: &Coords<f64, N>,
-) -> Ricci<Coords<f64, N>> {
-    let rt = to_flat(&ricci_tensor(metric, x));
-    let rs = ricci_scalar(metric, x);
-    let g_arr: T2<f64, N> = from_flat_2(&to_flat(&metric.g(*x)));
-    let mut out = [[0.0; N]; N];
-    for i in 0..N {
-        for j in 0..N {
-            out[i][j] = rt[i * N + j] - 0.5 * g_arr[i][j] * rs;
+pub fn stress_energy_momentum_tensor<V, M>(metric: &M, x: &V) -> MetricTensor<V>
+where
+    V: Euclidean<Hand = Right>
+        + Copy
+        + NormalizeWith<Undecorated, Normalized = V>
+        + NormalizeWith<Dualized, Normalized = Dual<V>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<V>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<V>>>,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, V>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>,
+        > + Copy
+        + NormalizeWith<Undecorated, Normalized = JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>
+        + NormalizeWith<Dualized, Normalized = Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<Sinistered, Normalized = Sinister<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>
+        + NormalizeWith<DualSinistered, Normalized = Sinister<Dual<JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>>>,
+    Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>: Real,
+    JetVector<𝐑𝐞𝐚𝐥::𝒞, JetVector<𝐑𝐞𝐚𝐥::𝒞, V>>: Euclidean<
+            Array<Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>> = V::Array<
+                Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+            >,
+            Hand = Right,
+            Action = BothSided,
+            F = Jet<𝐑𝐞𝐚𝐥::𝒞, Jet<𝐑𝐞𝐚𝐥::𝒞, V::F>>,
+        >,
+    M: MetricField,
+{
+    let g = einstein_tensor(metric, x);
+
+    let kappa = <V::F as NumCast>::from(
+        (8.0 * std::f64::consts::PI * 6.67e-11)
+            / 299_792_458.0_f64.powi(4),
+    )
+    .unwrap();
+
+    // SI conversion divides by κ ≈ 2e-43, which catastrophically
+    // amplifies floating-point residuals in numerically vacuum solutions.
+    // Canonicalize values the scalar model already regards as zero
+    // before applying the unit conversion.
+    MetricTensor::<V>::from_fn(|i| {
+        let value = g[i];
+
+        if value == V::F::zero() {
+            V::F::zero()
+        } else {
+            value / kappa
         }
-    }
-    close_to_zero(Ricci::<Coords<f64, N>>::from_fn(|k| out[k / N][k % N]))
-}
-
-/// T_ij = G_ij / κ with κ = 8πG/c⁴ — mass-energy content from the field
-/// equations.
-pub fn stress_energy_momentum_tensor<const N: usize, M: MetricField<N>>(
-    metric: &M,
-    x: &Coords<f64, N>,
-) -> Ricci<Coords<f64, N>> {
-    let g = to_flat(&einstein_tensor(metric, x));
-    let kappa = (8.0 * std::f64::consts::PI * 6.67e-11) / 299_792_458.0_f64.powi(4);
-    let out: Vec<f64> = g.iter().map(|v| v / kappa).collect();
-    close_to_zero(Ricci::<Coords<f64, N>>::from_fn(|i| out[i]))
+    })
 }
