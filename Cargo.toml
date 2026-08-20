@@ -8,7 +8,7 @@ readme = "README.rust.md"
 license = "MIT"
 repository = "https://github.com/planckeon/autograv"
 documentation = "https://docs.rs/autograv"
-keywords = ["general-relativity", "numerical-relativity", "automatic-differentiation", "tensor-calculus", "differential-geometry"]
+keywords = ["general-relativity", "numerical-relativity", "auto-diff", "tensor-calculus", "differential-geometry"]
 categories = ["science", "mathematics"]
 include = [
     "Cargo.toml",
