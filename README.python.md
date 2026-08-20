@@ -1,4 +1,4 @@
-# autograv - Python
+# autograv
 
 **Bridging numerical relativity and automatic differentiation using JAX**
 

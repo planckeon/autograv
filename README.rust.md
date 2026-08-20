@@ -1,4 +1,4 @@
-# autograv — Rust
+# autograv
 
 Numerical-relativity tensor calculus in Rust, built on
 [`diffable`](https://crates.io/crates/diffable)'s typed tensor algebra and
