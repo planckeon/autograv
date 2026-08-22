@@ -1,244 +1,332 @@
-//! General-relativity index algebra: connection, curvature, and Einstein field
-//! equations.
+use num_traits::{NumCast, One, Zero};
 
-use num_traits::{Zero, real::Real};
-
-use diffable::coords::Coords;
 use diffable::traits::{
-    Dual, Euclidean, Right, Tensor,
-    calculus::{JetRegion, TensorProduct},
-    ι, 𝐑𝐞𝐚𝐥,
+    Atomic, BothSided, Cat, DivRing, Dual, Euclidean, Field, Left, Right, Sinister, Tensor,
+    calculus::{
+        Contract, Here, Jet, JetVector, OnLeft, OnRight, Reassociate, Swap, TensorProduct,
+        ThroughSinister, d,
+    },
 };
 
-use crate::ad::jacobian_of;
-use crate::metric::{MetricField, ScalarConst};
-use crate::tensor::{
-    T2, T3, T4, close_to_zero, close_to_zero_scalar, flatten_3, flatten_4, from_flat_2,
-    from_flat_3, from_flat_4, invert, permute3, permute4, to_flat,
-};
+use crate::metric::MetricField;
 
-/// Γ^j_kl — mixed `(1, 2)` connection tensor.
+pub type MetricTensor<V> = TensorProduct<Sinister<Dual<V>>, Dual<V>>;
+pub type Einstein<V> = MetricTensor<V>;
+pub type InverseMetric<V> = TensorProduct<V, Sinister<V>>;
 pub type Christoffel<V> = TensorProduct<TensorProduct<V, Dual<V>>, Dual<V>>;
-/// R^j_klm — mixed `(1, 3)` curvature tensor.
 pub type Riemann<V> = TensorProduct<Christoffel<V>, Dual<V>>;
-/// R_kl — covariant `(0, 2)` tensor (same shape as the metric).
-pub type Ricci<V> = crate::metric::MetricTensor<V>;
+pub type Ricci<V> = MetricTensor<V>;
 
-/// Γ^j_kl = ½ g^jm (∂_l g_mk + ∂_k g_lm − ∂_m g_kl), evaluated at `x`.
-///
-/// Generic over the point presentation `V` so the same code runs at real
-/// points (`f64`) and at jet points (nested `JetVector`) — the latter is what
-/// lets `riemann_tensor` differentiate the connection.
-pub(crate) fn christoffel_generic<V, const N: usize, M>(metric: &M, x: V) -> Christoffel<V>
+fn commute_metric_jet<C: Cat, V: Tensor<Hand = Right, Action = BothSided>>(
+    g: MetricTensor<JetVector<C, V>>,
+) -> JetVector<C, MetricTensor<V>>
 where
-    V: Euclidean + Tensor<Hand = Right> + Copy,
-    V::F: Real + ScalarConst + ι<C: JetRegion<𝐑𝐞𝐚𝐥::𝒞>>,
-    M: MetricField<N>,
+    JetVector<C, V>: Tensor<Hand = Right, Action = BothSided, F = Jet<C, V::F>>,
+    Jet<C, V::F>: Field,
 {
-    // g_ij and its inverse at this point.
-    let g = metric.g(x);
-    let g_arr: T2<V::F, N> = from_flat_2(&to_flat(&g));
-    let g_inv = invert(&g_arr);
-
-    // ∂g_ab/∂x^c via diffable jets: D[a][b][c].
-    let d_flat = jacobian_of(|v| metric.g(v), &x);
-    let d: T3<V::F, N> = from_flat_3(&d_flat);
-
-    // S[m][k][l] = ∂_l g_mk + ∂_k g_lm − ∂_m g_kl
-    let d_mlk = permute3(&d, [2, 0, 1]); // dst[m][k][l] = d[l][m][k]
-    let d_klm = permute3(&d, [1, 2, 0]); // dst[m][k][l] = d[k][l][m]
-
-    let mut gamma = [[[V::F::zero(); N]; N]; N];
-    // 0.5 * Σ_m g^jm · S[m][k][l]
-    let half = V::F::from_const(0.5);
-    for j in 0..N {
-        for k in 0..N {
-            for l in 0..N {
-                let mut s = V::F::zero();
-                for m in 0..N {
-                    s = s + g_inv[j][m] * (d[m][k][l] + d_mlk[m][k][l] - d_klm[m][k][l]);
-                }
-                gamma[j][k][l] = s * half;
-            }
-        }
-    }
-
-    Christoffel::<V>::from_fn(|i| flatten_3(&gamma)[i])
+    <JetVector<C, MetricTensor<V>> as Tensor>::from_fn(|i| g[i])
 }
 
-/// Affine connection coefficients (Christoffel symbols of the second kind).
-pub fn christoffel_symbols<const N: usize, M: MetricField<N>>(
+fn commute_christoffel_jet<C: Cat, V: Tensor<Hand = Right, Action = BothSided>>(
+    gamma: Christoffel<JetVector<C, V>>,
+) -> JetVector<C, Christoffel<V>>
+where
+    JetVector<C, V>: Tensor<Hand = Right, Action = BothSided, F = Jet<C, V::F>>,
+    Jet<C, V::F>: Field,
+{
+    <JetVector<C, Christoffel<V>> as Tensor>::from_fn(|i| gamma[i])
+}
+
+pub fn christoffel_symbols<V: Euclidean<Hand = Right, Normalization = Atomic>, M: MetricField>(
     metric: &M,
-    x: &Coords<f64, N>,
-) -> Christoffel<Coords<f64, N>> {
-    close_to_zero(christoffel_generic(metric, *x))
+    x: &V,
+) -> Christoffel<V> {
+    let g: MetricTensor<V> = metric.g(x.clone());
+    let g_inv: InverseMetric<V> = g.inverse();
+
+    // this deref then clone is awkward
+    let dg = (*d(|x| commute_metric_jet(metric.g(x))).at(x.clone())).clone();
+
+    let d_lmk = dg
+        .clone()
+        .swap::<OnLeft<Here>>()
+        .reassociate::<Right>()
+        .swap::<OnRight<ThroughSinister<Here>>>()
+        .reassociate::<Left>();
+
+    let d_klm = dg
+        .clone()
+        .reassociate::<Right>()
+        .swap::<OnRight<ThroughSinister<Here>>>()
+        .reassociate::<Left>()
+        .swap::<OnLeft<Here>>();
+
+    let koszul = dg + d_lmk - d_klm;
+
+    let gamma: Christoffel<V> = TensorProduct::pure(g_inv, Sinister(koszul))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Right>>>()
+        .contract::<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>();
+
+    let half = V::F::one().div(V::F::from_nat(2));
+
+    gamma * half
 }
 
-/// T^j_kl = Γ^j_kl − Γ^j_lk. Identically zero for a Levi-Civita connection —
-/// a verification of the machinery
-pub fn torsion_tensor<const N: usize, M: MetricField<N>>(
+pub fn torsion<V: Euclidean<Hand = Right, Normalization = Atomic>>(
+    gamma: Christoffel<V>,
+) -> Christoffel<V> {
+    let swapped: Christoffel<V> = gamma
+        .clone()
+        .reassociate::<Right>()
+        .swap::<OnRight<ThroughSinister<Here>>>()
+        .reassociate::<Left>();
+
+    gamma - swapped
+}
+
+pub fn torsion_tensor<V: Euclidean<Hand = Right, Normalization = Atomic>, M: MetricField>(
     metric: &M,
-    x: &Coords<f64, N>,
-) -> Christoffel<Coords<f64, N>> {
-    let g = christoffel_generic(metric, *x);
-    let flat = to_flat(&g);
-    let arr: T3<f64, N> = from_flat_3(&flat);
-    let swapped = permute3(&arr, [0, 2, 1]); // dst[j][k][l] = arr[j][l][k]
-    let mut out = [[[0.0; N]; N]; N];
-    for j in 0..N {
-        for k in 0..N {
-            for l in 0..N {
-                out[j][k][l] = arr[j][k][l] - swapped[j][k][l];
-            }
-        }
-    }
-    close_to_zero(Christoffel::<Coords<f64, N>>::from_fn(|i| {
-        flatten_3(&out)[i]
-    }))
+    x: &V,
+) -> Christoffel<V> {
+    torsion(christoffel_symbols(metric, x))
 }
 
-/// R^j_klm = ∂_m Γ^j_kl − ∂_l Γ^j_km + Γ^j_rm Γ^r_kl − Γ^j_rl Γ^r_km.
-pub(crate) fn riemann_raw<const N: usize, M: MetricField<N>>(
+pub fn riemann_tensor<V: Euclidean<Hand = Right, Normalization = Atomic>, M: MetricField>(
     metric: &M,
-    x: &Coords<f64, N>,
-) -> T4<f64, N> {
-    let gamma_flat = to_flat(&christoffel_generic(metric, *x));
-    let gamma: T3<f64, N> = from_flat_3(&gamma_flat);
+    x: &V,
+) -> Riemann<V> {
+    let gamma: Christoffel<V> = christoffel_symbols(metric, x);
 
-    // ∂_m Γ^j_kl via jets through the generic connection pipeline.
-    let d_flat = jacobian_of(|v| christoffel_generic(metric, v), x);
-    let dg: T4<f64, N> = from_flat_4(&d_flat);
-    let dg_swap = permute4(&dg, [0, 1, 3, 2]); // dst[j][k][l][m] = dg[j][k][m][l]
+    let dgamma: Riemann<V> =
+        (*d(|x| commute_christoffel_jet(christoffel_symbols(metric, &x))).at(x.clone())).clone();
 
-    let mut r = [[[[0.0; N]; N]; N]; N];
-    for j in 0..N {
-        for k in 0..N {
-            for l in 0..N {
-                for m in 0..N {
-                    let t3: f64 = (0..N).map(|s| gamma[j][s][m] * gamma[s][k][l]).sum();
-                    let t4: f64 = (0..N).map(|s| gamma[j][s][l] * gamma[s][k][m]).sum();
-                    r[j][k][l][m] = dg[j][k][l][m] - dg_swap[j][k][l][m] + t3 - t4;
-                }
-            }
-        }
-    }
-    r
+    let dgamma_kl: Riemann<V> = dgamma
+        .clone()
+        .reassociate::<Right>()
+        .swap::<OnRight<ThroughSinister<Here>>>()
+        .reassociate::<Left>();
+
+    let derivative: Riemann<V> = dgamma_kl - dgamma;
+
+    let quadratic_raw = TensorProduct::pure(gamma.clone(), Sinister(gamma))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Right>>>()
+        .contract::<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>();
+
+    let quadratic: Riemann<V> = quadratic_raw
+        .reassociate::<OnLeft<Right>>()
+        .swap::<OnLeft<OnRight<ThroughSinister<Here>>>>()
+        .reassociate::<OnLeft<Left>>();
+
+    let quadratic_kl: Riemann<V> = quadratic
+        .clone()
+        .reassociate::<Right>()
+        .swap::<OnRight<ThroughSinister<Here>>>()
+        .reassociate::<Left>();
+
+    derivative + quadratic - quadratic_kl
 }
 
-/// Riemann curvature tensor.
-pub fn riemann_tensor<const N: usize, M: MetricField<N>>(
+pub fn ricci_tensor<V: Euclidean<Hand = Right, Normalization = Atomic>, M: MetricField>(
     metric: &M,
-    x: &Coords<f64, N>,
-) -> Riemann<Coords<f64, N>> {
-    let r = riemann_raw(metric, x);
-    close_to_zero(Riemann::<Coords<f64, N>>::from_fn(|i| flatten_4(&r)[i]))
+    x: &V,
+) -> Ricci<V> {
+    riemann_tensor(metric, x)
+        .reassociate::<OnLeft<Right>>()
+        .swap::<OnLeft<OnRight<ThroughSinister<Here>>>>()
+        .reassociate::<OnLeft<Left>>()
+        .contract::<OnLeft<OnLeft<Here>>>()
 }
 
-/// R_kl = Σ_j R^j_klj.
-pub fn ricci_tensor<const N: usize, M: MetricField<N>>(
+pub fn ricci_scalar<V: Euclidean<Hand = Right, Normalization = Atomic>, M: MetricField>(
     metric: &M,
-    x: &Coords<f64, N>,
-) -> Ricci<Coords<f64, N>> {
-    let r = riemann_raw(metric, x);
-    let mut out = [[0.0; N]; N];
-    for k in 0..N {
-        for l in 0..N {
-            out[k][l] = (0..N).map(|j| r[j][k][l][j]).sum();
-        }
-    }
-    close_to_zero(Ricci::<Coords<f64, N>>::from_fn(|i| out[i / N][i % N]))
+    x: &V,
+) -> V::F {
+    let g_inv = metric.g(x.clone()).inverse();
+    let ricci = ricci_tensor(metric, x);
+
+    let once: TensorProduct<V, Dual<V>> = TensorProduct::pure(g_inv, Sinister(ricci))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Right>>()
+        .contract::<OnLeft<OnRight<ThroughSinister<Here>>>>();
+
+    once.contract::<Here>()
 }
 
-/// R = g^kl R_kl.
-pub fn ricci_scalar<const N: usize, M: MetricField<N>>(metric: &M, x: &Coords<f64, N>) -> f64 {
-    let g_arr: T2<f64, N> = from_flat_2(&to_flat(&metric.g(*x)));
-    let g_inv = invert(&g_arr);
-    let ricci = to_flat(&ricci_tensor(metric, x));
-    let mut s = 0.0;
-    for k in 0..N {
-        for l in 0..N {
-            s += g_inv[k][l] * ricci[k * N + l];
-        }
-    }
-    close_to_zero_scalar(s)
-}
-
-/// K = R^ijkl R_ijkl — the Kretschmann invariant, coordinate-independent
-/// singularity detector. Explicit tensor contraction:
-///   upper[i][p][q][r] = Σ_jkl g^pj g^qk g^rl R[i][j][k][l]
-///   lower[p][j][k][l] = Σ_i  g_pi R[i][j][k][l]
-///   K = Σ_ijkl upper[i][j][k][l] · lower[i][j][k][l]
-pub fn kretschmann_invariant<const N: usize, M: MetricField<N>>(
+pub fn einstein_tensor<V: Euclidean<Hand = Right, Normalization = Atomic>, M: MetricField>(
     metric: &M,
-    x: &Coords<f64, N>,
-) -> f64 {
-    let r = riemann_raw(metric, x);
-    let g_arr: T2<f64, N> = from_flat_2(&to_flat(&metric.g(*x)));
-    let g_inv = invert(&g_arr);
+    x: &V,
+) -> Einstein<V> {
+    let g = metric.g(x.clone());
+    let ricci = ricci_tensor(metric, x);
+    let scalar = ricci_scalar(metric, x);
 
-    let mut upper = [[[[0.0; N]; N]; N]; N];
-    let mut lower = [[[[0.0; N]; N]; N]; N];
-    for i in 0..N {
-        for p in 0..N {
-            for q in 0..N {
-                for rr in 0..N {
-                    let mut s = 0.0;
-                    for j in 0..N {
-                        for k in 0..N {
-                            for l in 0..N {
-                                s += g_inv[p][j] * g_inv[q][k] * g_inv[rr][l] * r[i][j][k][l];
-                            }
-                        }
-                    }
-                    upper[i][p][q][rr] = s;
-                }
-            }
-        }
-    }
-    for p in 0..N {
-        for j in 0..N {
-            for k in 0..N {
-                for l in 0..N {
-                    lower[p][j][k][l] = (0..N).map(|i| g_arr[p][i] * r[i][j][k][l]).sum();
-                }
-            }
-        }
-    }
-    let k = (0..N)
-        .flat_map(|i| {
-            (0..N).flat_map(move |j| {
-                (0..N).flat_map(move |k| (0..N).map(move |l| upper[i][j][k][l] * lower[i][j][k][l]))
-            })
-        })
-        .sum();
-    close_to_zero_scalar(k)
+    let half = V::F::one() / V::F::from_nat(2);
+
+    ricci - g * (scalar * half)
 }
 
-/// G_ij = R_ij − ½ g_ij R — the left-hand side of the Einstein field equations.
-pub fn einstein_tensor<const N: usize, M: MetricField<N>>(
+pub fn kretschmann_invariant<V: Euclidean<Hand = Right, Normalization = Atomic>, M: MetricField>(
     metric: &M,
-    x: &Coords<f64, N>,
-) -> Ricci<Coords<f64, N>> {
-    let rt = to_flat(&ricci_tensor(metric, x));
-    let rs = ricci_scalar(metric, x);
-    let g_arr: T2<f64, N> = from_flat_2(&to_flat(&metric.g(*x)));
-    let mut out = [[0.0; N]; N];
-    for i in 0..N {
-        for j in 0..N {
-            out[i][j] = rt[i * N + j] - 0.5 * g_arr[i][j] * rs;
-        }
-    }
-    close_to_zero(Ricci::<Coords<f64, N>>::from_fn(|k| out[k / N][k % N]))
+    x: &V,
+) -> V::F {
+    type CovariantRiemann<V> =
+        TensorProduct<TensorProduct<TensorProduct<Sinister<Dual<V>>, Dual<V>>, Dual<V>>, Dual<V>>;
+
+    type Raised1<V> = TensorProduct<TensorProduct<TensorProduct<V, Dual<V>>, Dual<V>>, Dual<V>>;
+
+    type Raised2<V> = TensorProduct<TensorProduct<TensorProduct<V, Sinister<V>>, Dual<V>>, Dual<V>>;
+
+    type Raised3<V> =
+        TensorProduct<TensorProduct<TensorProduct<V, Sinister<V>>, Sinister<V>>, Dual<V>>;
+
+    type Raised4<V> =
+        TensorProduct<TensorProduct<TensorProduct<V, Sinister<V>>, Sinister<V>>, Sinister<V>>;
+
+    let g = metric.g(x.clone());
+    let g_inv = g.clone().inverse();
+
+    let r = riemann_tensor(metric, x);
+
+    // R_abcd
+    let r_down: CovariantRiemann<V> = TensorProduct::pure(g, Sinister(r))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Left>>>()
+        .reassociate::<OnLeft<OnLeft<OnLeft<Right>>>>()
+        .contract::<OnLeft<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>>();
+
+    // ------------------------------------------------------------
+    // Raise slot 0: R_abcd -> R^a_bcd
+    // ------------------------------------------------------------
+
+    let r1: Raised1<V> = TensorProduct::pure(g_inv.clone(), Sinister(r_down.clone()))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Left>>>()
+        .reassociate::<OnLeft<OnLeft<OnLeft<Right>>>>()
+        .contract::<OnLeft<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>>();
+
+    // ------------------------------------------------------------
+    // Raise slot 1.
+    //
+    // [a,b,c,d] -> [b,a,c,d]
+    // raise first
+    // [b,a,c,d] -> [a,b,c,d]
+    // ------------------------------------------------------------
+
+    let permuted = r1.swap::<OnLeft<OnLeft<Here>>>();
+
+    let raised = TensorProduct::pure(g_inv.clone(), Sinister(permuted))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Left>>>()
+        .reassociate::<OnLeft<OnLeft<OnLeft<Right>>>>()
+        .contract::<OnLeft<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>>();
+
+    let r2: Raised2<V> = raised.swap::<OnLeft<OnLeft<Here>>>();
+
+    // ------------------------------------------------------------
+    // Raise slot 2.
+    //
+    // swap b,c
+    // swap a,c
+    // raise first
+    // undo the two swaps
+    // ------------------------------------------------------------
+
+    let permuted = r2
+        .reassociate::<OnLeft<Right>>()
+        .swap::<OnLeft<OnRight<ThroughSinister<Here>>>>()
+        .reassociate::<OnLeft<Left>>()
+        .swap::<OnLeft<OnLeft<Here>>>();
+
+    let raised = TensorProduct::pure(g_inv.clone(), Sinister(permuted))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Left>>>()
+        .reassociate::<OnLeft<OnLeft<OnLeft<Right>>>>()
+        .contract::<OnLeft<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>>();
+
+    let r3: Raised3<V> = raised
+        .swap::<OnLeft<OnLeft<Here>>>()
+        .reassociate::<OnLeft<Right>>()
+        .swap::<OnLeft<OnRight<ThroughSinister<Here>>>>()
+        .reassociate::<OnLeft<Left>>();
+
+    // ------------------------------------------------------------
+    // Raise slot 3.
+    //
+    // d -> front via adjacent swaps,
+    // raise first,
+    // undo those swaps.
+    // ------------------------------------------------------------
+
+    let permuted = r3
+        // [a,b,c,d] -> [a,b,d,c]
+        .reassociate::<Right>()
+        .swap::<OnRight<ThroughSinister<Here>>>()
+        .reassociate::<Left>()
+        // [a,b,d,c] -> [a,d,b,c]
+        .reassociate::<OnLeft<Right>>()
+        .swap::<OnLeft<OnRight<ThroughSinister<Here>>>>()
+        .reassociate::<OnLeft<Left>>()
+        // [a,d,b,c] -> [d,a,b,c]
+        .swap::<OnLeft<OnLeft<Here>>>();
+
+    let raised = TensorProduct::pure(g_inv, Sinister(permuted))
+        .reassociate::<Left>()
+        .reassociate::<OnLeft<Left>>()
+        .reassociate::<OnLeft<OnLeft<Left>>>()
+        .reassociate::<OnLeft<OnLeft<OnLeft<Right>>>>()
+        .contract::<OnLeft<OnLeft<OnLeft<OnRight<ThroughSinister<Here>>>>>>();
+
+    let r_up: Raised4<V> = raised
+        // [d,a,b,c] -> [a,d,b,c]
+        .swap::<OnLeft<OnLeft<Here>>>()
+        // [a,d,b,c] -> [a,b,d,c]
+        .reassociate::<OnLeft<Right>>()
+        .swap::<OnLeft<OnRight<ThroughSinister<Here>>>>()
+        .reassociate::<OnLeft<Left>>()
+        // [a,b,d,c] -> [a,b,c,d]
+        .reassociate::<Right>()
+        .swap::<OnRight<ThroughSinister<Here>>>()
+        .reassociate::<Left>();
+
+    r_down
+        .iter()
+        .zip(r_up.iter())
+        .fold(V::F::zero(), |sum, (down, up)| sum + *down * *up)
 }
 
-/// T_ij = G_ij / κ with κ = 8πG/c⁴ — mass-energy content from the field
-/// equations.
-pub fn stress_energy_momentum_tensor<const N: usize, M: MetricField<N>>(
+pub fn stress_energy_momentum_tensor<
+    V: Euclidean<Hand = Right, Normalization = Atomic>,
+    M: MetricField,
+>(
     metric: &M,
-    x: &Coords<f64, N>,
-) -> Ricci<Coords<f64, N>> {
-    let g = to_flat(&einstein_tensor(metric, x));
-    let kappa = (8.0 * std::f64::consts::PI * 6.67e-11) / 299_792_458.0_f64.powi(4);
-    let out: Vec<f64> = g.iter().map(|v| v / kappa).collect();
-    close_to_zero(Ricci::<Coords<f64, N>>::from_fn(|i| out[i]))
+    x: &V,
+) -> MetricTensor<V> {
+    let g = einstein_tensor(metric, x);
+
+    let kappa = <V::F as NumCast>::from(
+        (8.0 * std::f64::consts::PI * 6.67e-11) / 299_792_458.0_f64.powi(4),
+    )
+    .unwrap();
+
+    // SI conversion divides by κ ≈ 2e-43, which catastrophically
+    // amplifies floating-point residuals in numerically vacuum solutions.
+    // Canonicalize values the scalar model already regards as zero
+    // before applying the unit conversion.
+    MetricTensor::<V>::from_fn(|i| {
+        let value = g[i];
+
+        if value == V::F::zero() {
+            V::F::zero()
+        } else {
+            value / kappa
+        }
+    })
 }

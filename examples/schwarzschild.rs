@@ -1,9 +1,8 @@
 //! Schwarzschild vacuum and Kretschmann verification.
 
 use autograv::{
-    Schwarzschild, as_t2, as_t3, as_t4, christoffel_symbols, einstein_tensor,
-    kretschmann_invariant, ricci_scalar, ricci_tensor, riemann_tensor,
-    stress_energy_momentum_tensor, torsion_tensor,
+    Schwarzschild, christoffel_symbols, einstein_tensor, kretschmann_invariant, ricci_scalar,
+    ricci_tensor, riemann_tensor, stress_energy_momentum_tensor, torsion_tensor,
 };
 use diffable::coords::Coords;
 use diffable::traits::Tensor;
@@ -24,11 +23,11 @@ fn main() {
         std::f64::consts::FRAC_PI_2,
     ]);
 
-    let gamma = as_t3::<4>(&christoffel_symbols(&metric, &coordinates));
-    let riemann = as_t4::<4>(&riemann_tensor(&metric, &coordinates));
-    let ricci = as_t2::<4>(&ricci_tensor(&metric, &coordinates));
-    let einstein = as_t2::<4>(&einstein_tensor(&metric, &coordinates));
-    let stress_energy = as_t2::<4>(&stress_energy_momentum_tensor(&metric, &coordinates));
+    let gamma = christoffel_symbols(&metric, &coordinates);
+    let riemann = riemann_tensor(&metric, &coordinates);
+    let ricci = ricci_tensor(&metric, &coordinates);
+    let einstein = einstein_tensor(&metric, &coordinates);
+    let stress_energy = stress_energy_momentum_tensor(&metric, &coordinates);
     let scalar = ricci_scalar(&metric, &coordinates);
     let kretschmann = kretschmann_invariant(&metric, &coordinates);
     let analytic = 48.0 * gravitational_constant.powi(2) * mass.powi(2)
@@ -37,13 +36,7 @@ fn main() {
     println!("Mass: {mass:.3e} kg");
     println!("Schwarzschild radius: {schwarzschild_radius:.3e} m");
     println!("Γ^j_kl: {gamma:?}");
-    let curvature_scale = riemann
-        .iter()
-        .flatten()
-        .flatten()
-        .flatten()
-        .map(|value| value.abs())
-        .fold(0.0, f64::max);
+    let curvature_scale = riemann.iter().map(|value| value.abs()).fold(0.0, f64::max);
     let relative_roundoff = 1e-12 * curvature_scale;
     let kappa = (8.0 * std::f64::consts::PI * gravitational_constant) / speed_of_light.powi(4);
 
@@ -61,23 +54,12 @@ fn main() {
             .iter()
             .all(|&v| v == 0.0)
     );
-    assert!(
-        ricci
-            .iter()
-            .flatten()
-            .all(|&v| v.abs() <= relative_roundoff)
-    );
+    assert!(ricci.iter().all(|&v| v.abs() <= relative_roundoff));
     assert_eq!(scalar, 0.0);
-    assert!(
-        einstein
-            .iter()
-            .flatten()
-            .all(|&v| v.abs() <= relative_roundoff)
-    );
+    assert!(einstein.iter().all(|&v| v.abs() <= relative_roundoff));
     assert!(
         stress_energy
             .iter()
-            .flatten()
             .all(|&v| v.abs() <= relative_roundoff / kappa)
     );
     assert!((kretschmann - analytic).abs() < 1e-10 * analytic);

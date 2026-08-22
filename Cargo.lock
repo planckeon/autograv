@@ -18,9 +18,9 @@ dependencies = [
 
 [[package]]
 name = "diffable"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "677a1b4b84c6005673d5f77556e148acac968e362e1e8550cb7bad4303d9494d"
+checksum = "e64f9aaee56b382b7139e2cd10108d3d596a7a18686304f5a04579ac35412b61"
 dependencies = [
  "num-derive",
  "num-traits",
