@@ -2,9 +2,9 @@
 //! `(0, 2)` tensor field, generic over the scalar so diffable's jets flow
 //! through every layer of differentiation.
 
-use num_traits::{NumCast, One, Zero, real::Real};
+use num_traits::{NumCast, One, Zero, real::Real as _};
 
-use diffable::traits::{Euclidean, Right, Tensor, calculus::TensorProduct};
+use diffable::traits::{Atomic, Euclidean, Right, calculus::TensorProduct};
 
 use crate::gr::MetricTensor;
 
@@ -15,19 +15,14 @@ use crate::gr::MetricTensor;
 pub trait MetricField {
     fn g<V>(&self, x: V) -> MetricTensor<V>
     where
-        V: Euclidean + Tensor<Hand = Right>,
-        V::F: Real;
+        V: Euclidean<Hand = Right, Normalization = Atomic>;
 }
 
 /// Minkowski metric, signature `(−, +, +, +)`, constant on `R⁴`.
 pub struct Minkowski;
 
 impl MetricField for Minkowski {
-    fn g<V>(&self, x: V) -> MetricTensor<V>
-    where
-        V: Euclidean + Tensor<Hand = Right>,
-        V::F: Real,
-    {
+    fn g<V: Euclidean<Hand = Right, Normalization = Atomic>>(&self, x: V) -> MetricTensor<V> {
         const { assert!(V::N == 4) };
         let _ = x;
         TensorProduct::from_fn_ij(|i, j| {
@@ -45,11 +40,7 @@ impl MetricField for Minkowski {
 pub struct SphericalPolar;
 
 impl MetricField for SphericalPolar {
-    fn g<V>(&self, x: V) -> MetricTensor<V>
-    where
-        V: Euclidean + Tensor<Hand = Right>,
-        V::F: Real,
-    {
+    fn g<V: Euclidean<Hand = Right, Normalization = Atomic>>(&self, x: V) -> MetricTensor<V> {
         const { assert!(V::N == 3) };
         let r = x[0];
         let r2 = r * r;
@@ -81,11 +72,7 @@ pub struct Schwarzschild {
 }
 
 impl MetricField for Schwarzschild {
-    fn g<V>(&self, x: V) -> MetricTensor<V>
-    where
-        V: Euclidean + Tensor<Hand = Right>,
-        V::F: Real,
-    {
+    fn g<V: Euclidean<Hand = Right, Normalization = Atomic>>(&self, x: V) -> MetricTensor<V> {
         const { assert!(V::N == 4) };
         let r = x[1];
         let f = V::F::one() - <V::F as NumCast>::from(self.rs).unwrap() / r;
@@ -115,7 +102,7 @@ mod tests {
     #[test]
     fn minkowski_signature() {
         let m = Minkowski;
-        let g = m.g(Coords([1.0, 2.0, 3.0, 4.0]));
+        let g = m.g(Coords::<_, _>([1.0, 2.0, 3.0, 4.0]));
         assert_eq!(
             (g[(0, 0)], g[(1, 1)], g[(2, 2)], g[(3, 3)]),
             (-1.0, 1.0, 1.0, 1.0)
@@ -126,7 +113,7 @@ mod tests {
     #[test]
     fn spherical_polar_diagonal() {
         let m = SphericalPolar;
-        let x = Coords([5.0, std::f64::consts::FRAC_PI_3, 0.0]);
+        let x = Coords::<_, _>([5.0, std::f64::consts::FRAC_PI_3, 0.0]);
         let g = m.g(x);
         let r2 = 25.0;
         let s2 = r2 * (std::f64::consts::FRAC_PI_3.sin()).powi(2);

@@ -12,11 +12,14 @@ use diffable::traits::Tensor;
 use num_traits::zero;
 
 fn point() -> Coords<R64, 3> {
-    Coords([
-        5.0,
-        std::f64::consts::FRAC_PI_3,
-        std::f64::consts::FRAC_PI_2,
-    ].map(R64))
+    Coords(
+        [
+            5.0,
+            std::f64::consts::FRAC_PI_3,
+            std::f64::consts::FRAC_PI_2,
+        ]
+        .map(R64),
+    )
 }
 
 #[test]

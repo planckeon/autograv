@@ -28,5 +28,5 @@ path = "src/lib.rs"
 all-features = true
 
 [dependencies]
-diffable = { version = "0.5.0", default-features = false, features = ["std"] }
+diffable = { version = "0.5.1", default-features = false, features = ["std"] }
 num-traits = "0.2"

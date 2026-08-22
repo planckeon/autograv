@@ -21,14 +21,14 @@
 //! ## Quick start
 //!
 //! ```
-//! use autograv::{christoffel_symbols, ricci_scalar, component, SphericalPolar};
+//! use autograv::{christoffel_symbols, ricci_scalar, SphericalPolar};
 //! use diffable::coords::Coords;
 //!
 //! let metric = SphericalPolar;
 //! let point = Coords([5.0, std::f64::consts::FRAC_PI_3, std::f64::consts::FRAC_PI_2]);
 //! let gamma = &christoffel_symbols(&metric, &point);
 //!
-//! assert!((component(gamma, [0, 1, 1]) + 5.0).abs() < 1e-12); // Γ^r_θθ = −r
+//! assert!((gamma[[0, 1, 1]] + 5.0).abs() < 1e-12); // Γ^r_θθ = −r
 //! assert!(ricci_scalar(&metric, &point) < 1e-12); // flat R³ in spherical coordinates
 //! ```
 //!
@@ -47,15 +47,11 @@
 //! must evaluate only at nonsingular coordinate points.
 //! TODO: a better API surface than panicking?
 
-// diffable's public API uses mathematical Unicode identifiers (𝐑𝐞𝐚𝐥, ι, 𝒞);
-// we must reference them, so silence the confusability lints crate-wide.
-#![allow(uncommon_codepoints, confusable_idents, mixed_script_confusables)]
-
 pub mod gr;
 pub mod metric;
 
 pub use gr::{
-    Christoffel, MetricTensor, Ricci, Riemann, christoffel_symbols, component, einstein_tensor,
+    Christoffel, MetricTensor, Ricci, Riemann, christoffel_symbols, einstein_tensor,
     kretschmann_invariant, ricci_scalar, ricci_tensor, riemann_tensor,
     stress_energy_momentum_tensor, torsion_tensor,
 };

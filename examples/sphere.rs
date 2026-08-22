@@ -1,8 +1,8 @@
 //! Full flat-space spherical-coordinate verification.
 
 use autograv::{
-    SphericalPolar, christoffel_symbols, component, einstein_tensor, kretschmann_invariant,
-    ricci_scalar, ricci_tensor, riemann_tensor, stress_energy_momentum_tensor, torsion_tensor,
+    SphericalPolar, christoffel_symbols, einstein_tensor, kretschmann_invariant, ricci_scalar,
+    ricci_tensor, riemann_tensor, stress_energy_momentum_tensor, torsion_tensor,
 };
 use diffable::coords::Coords;
 use diffable::traits::Tensor;
@@ -34,7 +34,7 @@ fn main() {
         kretschmann_invariant(&metric, &coordinates)
     );
 
-    assert!((component(gamma, [0, 1, 1]) + 5.0).abs() < 1e-12);
+    assert!((gamma[[0, 1, 1]] + 5.0).abs() < 1e-12);
     assert!(torsion.iter().all(|&v| v == 0.0));
     assert!(riemann.iter().all(|&v| v == 0.0));
     assert!(ricci.iter().all(|&v| v == 0.0));
